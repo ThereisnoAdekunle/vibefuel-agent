@@ -20,6 +20,7 @@ contract VibeFuelRewards {
     mapping(address => uint256) public stakedBalance;
     mapping(address => uint256) public lastClaimAt;
     uint256 public totalStaked;
+    uint256 public totalEligibleStaked;
 
     bool private locked;
 
@@ -60,6 +61,9 @@ contract VibeFuelRewards {
         totalStaked += amount;
         if (previousStake < MINIMUM_STAKE && stakedBalance[msg.sender] >= MINIMUM_STAKE) {
             lastClaimAt[msg.sender] = block.timestamp;
+            totalEligibleStaked += stakedBalance[msg.sender];
+        } else if (previousStake >= MINIMUM_STAKE) {
+            totalEligibleStaked += amount;
         }
         emit Staked(msg.sender, amount);
     }
@@ -67,8 +71,14 @@ contract VibeFuelRewards {
     function unstake(uint256 amount) external nonReentrant {
         require(amount > 0 && amount <= stakedBalance[msg.sender], "invalid amount");
         _claimIfEligible(msg.sender);
+        uint256 previousStake = stakedBalance[msg.sender];
         stakedBalance[msg.sender] -= amount;
         totalStaked -= amount;
+        if (previousStake >= MINIMUM_STAKE && stakedBalance[msg.sender] < MINIMUM_STAKE) {
+            totalEligibleStaked -= previousStake;
+        } else if (previousStake >= MINIMUM_STAKE) {
+            totalEligibleStaked -= amount;
+        }
         require(stakeToken.transfer(msg.sender, amount), "unstake transfer failed");
         if (stakedBalance[msg.sender] < MINIMUM_STAKE) {
             lastClaimAt[msg.sender] = block.timestamp;
@@ -88,7 +98,7 @@ contract VibeFuelRewards {
     function pendingRewards(address account) external view returns (uint256[REWARD_TOKEN_COUNT] memory amounts) {
         uint256 periods = claimablePeriods(account);
         for (uint256 index = 0; index < REWARD_TOKEN_COUNT; index++) {
-            amounts[index] = rewardPerPeriod[index] * periods;
+            amounts[index] = totalEligibleStaked == 0 ? 0 : rewardPerPeriod[index] * periods * stakedBalance[account] / totalEligibleStaked;
         }
     }
 
@@ -117,7 +127,7 @@ contract VibeFuelRewards {
 
         uint256[REWARD_TOKEN_COUNT] memory amounts;
         for (uint256 index = 0; index < REWARD_TOKEN_COUNT; index++) {
-            amounts[index] = rewardPerPeriod[index] * periods;
+            amounts[index] = totalEligibleStaked == 0 ? 0 : rewardPerPeriod[index] * periods * stakedBalance[account] / totalEligibleStaked;
             require(rewardTokens[index].balanceOf(address(this)) >= amounts[index], "rewards not funded");
         }
         lastClaimAt[account] += periods * CLAIM_INTERVAL;

@@ -12,10 +12,10 @@ Constructor arguments:
    - `0x247d87DE6f7018a124969375DFCA8CACb82e5Ee9`
    - `0xE2D63d0a321399073295076d1b367bE49672eAFc`
 
-The default reward is `1,000` whole tokens of each reward token per completed 7-day period. Because these tokens use 18 decimals, the contract stores this as `1000000000000000000000`. The minimum stake is `100,000 VFUEL` (18 decimals). Missed periods accrue and can be claimed with `claimRewards()`.
+The default reward pool is `1,000` whole tokens of each reward token per completed 7-day period. Because these tokens use 18 decimals, the contract stores this as `1000000000000000000000`. The minimum stake is `100,000 VFUEL` (18 decimals). Each eligible wallet receives a proportional share: `user stake / total eligible stake * period pool`. Missed periods accrue and can be claimed with `claimRewards()`.
 
-Before users can claim, the owner must approve this contract to spend each reward token and call `fundRewards(amounts)`. To fund one period for one user, approve and fund `[1000000000000000000000, 1000000000000000000000, 1000000000000000000000, 1000000000000000000000, 1000000000000000000000]` base units.
+Before users can claim, the owner must approve this contract to spend each reward token and call `fundRewards(amounts)`. To fund one full period pool, approve and fund `[1000000000000000000000, 1000000000000000000000, 1000000000000000000000, 1000000000000000000000, 1000000000000000000000]` base units.
 
 Owner-only `setRewardTerms` can change the reward amounts at any time; the current amounts are used when a claim is made, including periods that accrued since the previous claim. It cannot withdraw user stakes. The contract has no reward minting and no owner withdrawal function. Never put a private key or seed phrase in the repository or frontend.
 
-Important: this new contract is separate from the original `VibeFuelStaking` contract. Existing stakes in the old contract do not count here. Users must stake into this rewards contract after it is deployed.
+Important: this proportional-rewards version must be deployed as a new contract. Existing stakes in the old `VibeFuelStaking` or previous `VibeFuelRewards` contracts do not count here. Users must stake into this rewards contract after it is deployed.
