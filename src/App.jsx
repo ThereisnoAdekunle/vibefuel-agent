@@ -19,6 +19,7 @@ import {
 
 const TESTNET = { id: '0xb626', name: 'Robinhood Chain Testnet' };
 const CONTRACT_ADDRESS = '0x5B575A0E3d09c3D6d27B475e2eabB45d13bBd91B';
+const STAKING_ADDRESS = '0x056DD2Ff629BF8Fa51F3Ec126843d96D1e39cf5e';
 const LAUNCHPAD_URL = 'https://testnet.vibevibe.fun/token/0x5B575A0E3d09c3D6d27B475e2eabB45d13bBd91B';
 
 const suggestions = [
@@ -67,6 +68,30 @@ async function readTokenBalance(address, decimals) {
   return `${whole.toLocaleString()}.${fraction}`;
 }
 
+async function readStakedBalance(address, decimals) {
+  const data = `0x817b1cd2${address.slice(2).padStart(64, '0')}`;
+  const response = await fetch(RPC_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: STAKING_ADDRESS, data }, 'latest'] }) });
+  const payload = await response.json();
+  if (payload.error || !payload.result) throw new Error('Unable to read staked balance');
+  const value = BigInt(payload.result);
+  const whole = value / (10n ** BigInt(decimals));
+  const fraction = (value % (10n ** BigInt(decimals))).toString().padStart(decimals, '0').slice(0, 2);
+  return `${whole.toLocaleString()}.${fraction}`;
+}
+
+function parseTokenAmount(amount, decimals) {
+  const normalized = amount.trim();
+  if (!/^\d+(\.\d+)?$/.test(normalized)) throw new Error('Enter a valid VFUEL amount');
+  const [whole, fraction = ''] = normalized.split('.');
+  if (fraction.length > decimals) throw new Error('Amount has too many decimal places');
+  return (BigInt(whole) * (10n ** BigInt(decimals)) + BigInt(fraction.padEnd(decimals, '0') || '0')).toString(16).padStart(64, '0');
+}
+
+async function sendWalletTransaction(transaction) {
+  if (!window.ethereum) throw new Error('Connect a wallet extension first');
+  return window.ethereum.request({ method: 'eth_sendTransaction', params: [transaction] });
+}
+
 async function readLaunchData() {
   const response = await fetch(`/api/launch?address=${encodeURIComponent(CONTRACT_ADDRESS)}`);
   const payload = await response.json();
@@ -106,6 +131,8 @@ function App() {
   const [tokenMeta, setTokenMeta] = useState({ name: 'VIBE FUEL', symbol: 'VFUEL', status: 'loading' });
   const [tokenBalance, setTokenBalance] = useState(null);
   const [launchData, setLaunchData] = useState(null);
+  const [stakedBalance, setStakedBalance] = useState(null);
+  const [stakingStatus, setStakingStatus] = useState('idle');
 
   useEffect(() => {
     readTokenMetadata().then((metadata) => setTokenMeta({ ...metadata, status: 'live' })).catch(() => setTokenMeta((current) => ({ ...current, status: 'offline' })));
@@ -114,6 +141,10 @@ function App() {
   useEffect(() => {
     if (!wallet || wallet === 'demo' || !tokenMeta.decimals) return;
     readTokenBalance(wallet, tokenMeta.decimals).then(setTokenBalance).catch(() => setTokenBalance(null));
+    readStakedBalance(wallet, tokenMeta.decimals).then((balance) => {
+      setStakedBalance(balance);
+      setBoosted(balance !== '0.00');
+    }).catch(() => setStakedBalance(null));
   }, [wallet, tokenMeta.decimals]);
 
   useEffect(() => {
@@ -142,6 +173,23 @@ function App() {
     await navigator.clipboard?.writeText(CONTRACT_ADDRESS);
     setCopied(true);
     setTimeout(() => setCopied(false), 1400);
+  };
+
+  const stakeTokens = async () => {
+    if (!wallet || wallet === 'demo' || !tokenMeta.decimals || !stakeAmount) return;
+    try {
+      const amount = parseTokenAmount(stakeAmount, tokenMeta.decimals);
+      setStakingStatus('approving');
+      await sendWalletTransaction({ from: wallet, to: CONTRACT_ADDRESS, data: `0x095ea7b3${STAKING_ADDRESS.slice(2).padStart(64, '0')}${amount}` });
+      setStakingStatus('staking');
+      await sendWalletTransaction({ from: wallet, to: STAKING_ADDRESS, data: `0xa694fc3a${amount}` });
+      setStakingStatus('confirmed');
+      setBoosted(true);
+      readStakedBalance(wallet, tokenMeta.decimals).then(setStakedBalance).catch(() => {});
+      setStakeAmount('');
+    } catch {
+      setStakingStatus('idle');
+    }
   };
 
   const sendQuestion = (text = question) => {
@@ -189,8 +237,8 @@ function App() {
           <div className="dashboard-head"><div><p className="section-kicker">01 / ACCESS PROTOCOL</p><h2>Fuel the signal.</h2></div><div className="chain-label"><span className="status-dot" /> Robinhood Chain <b>TESTNET</b></div></div>
           <div className="access-grid">
             <div className="balance-panel"><div className="panel-top"><span>YOUR BALANCE</span><span className="token-symbol">${tokenMeta.symbol}</span></div><div className="balance-value">{wallet ? wallet === 'demo' ? '12,480.00' : tokenBalance ?? 'Reading...' : '—'} <small>{tokenMeta.symbol}</small></div><div className="balance-usd">{wallet ? wallet === 'demo' ? 'Demo wallet balance' : 'Live contract balance' : `${tokenMeta.name} on testnet`}</div><div className="balance-footer"><span>Token data</span><strong className={tokenMeta.status === 'live' ? 'connected' : ''}>{tokenMeta.status === 'live' ? 'Live' : 'Reading...'}</strong></div></div>
-            <div className="stake-panel"><div className="panel-top"><span>AGENT ACCESS</span><LockKeyhole size={16} /></div><p>Wallet gating is ready. On-chain staking needs a deployed staking contract.</p><div className="stake-input"><input type="number" min="0" placeholder="0.00" value={stakeAmount} onChange={(event) => setStakeAmount(event.target.value)} /><span>VFUEL</span><button onClick={() => setStakeAmount('12480')}>MAX</button></div><button className="boost-button" disabled><LockKeyhole size={16} /> Staking contract pending</button></div>
-            <div className="unlock-panel"><div className="unlock-icon"><Zap size={20} fill="currentColor" /></div><div><span>AGENT BOOST</span><h3>Contract required</h3><p>Deploy the staking contract to activate gated sessions.</p><small className="launch-snapshot">{launchData ? `${launchData.curve.lifecycle} · ${launchData.holderCount} holders · ${formatEth(launchData.analytics?.volume24hWei)} test ETH / 24h` : 'Loading launch snapshot...'}</small></div><span className="lock-state"><LockKeyhole size={15} /></span></div>
+            <div className="stake-panel"><div className="panel-top"><span>STAKE TO UNLOCK</span><LockKeyhole size={16} /></div><p>Approve VFUEL, then confirm the stake transaction in your wallet.</p><div className="stake-input"><input type="number" min="0" placeholder="0.00" value={stakeAmount} onChange={(event) => setStakeAmount(event.target.value)} /><span>VFUEL</span><button onClick={() => setStakeAmount(tokenBalance?.replace(/,/g, '') || '0')}>MAX</button></div><button className="boost-button" disabled={!wallet || wallet === 'demo' || !stakeAmount || stakingStatus === 'approving' || stakingStatus === 'staking'} onClick={stakeTokens}>{stakingStatus === 'approving' ? 'Confirm approval...' : stakingStatus === 'staking' ? 'Confirm stake...' : stakingStatus === 'confirmed' ? <><Check size={16} /> Stake confirmed</> : <><Zap size={16} /> Approve & stake</>}</button></div>
+            <div className={stakedBalance && stakedBalance !== '0.00' ? 'unlock-panel active' : 'unlock-panel'}><div className="unlock-icon"><Zap size={20} fill="currentColor" /></div><div><span>AGENT BOOST</span><h3>{stakedBalance && stakedBalance !== '0.00' ? 'Online & listening' : 'Locked signal'}</h3><p>{stakedBalance && stakedBalance !== '0.00' ? `${stakedBalance} VFUEL staked.` : 'Stake VFUEL to begin your session.'}</p><small className="launch-snapshot">{launchData ? `${launchData.curve.lifecycle} · ${launchData.holderCount} holders · ${formatEth(launchData.analytics?.volume24hWei)} test ETH / 24h` : 'Loading launch snapshot...'}</small></div><span className="lock-state">{stakedBalance && stakedBalance !== '0.00' ? 'LIVE' : <LockKeyhole size={15} />}</span></div>
           </div>
         </section>
 
