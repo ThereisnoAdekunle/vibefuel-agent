@@ -63,7 +63,7 @@ async function readTokenBalance(address, decimals) {
   if (payload.error || !payload.result) throw new Error('Unable to read wallet balance');
   const value = BigInt(payload.result);
   const whole = value / (10n ** BigInt(decimals));
-  const fraction = (value % (10n ** BigInt(decimals))).toString().padStart(decimals, '0').slice(0, 2);
+  const fraction = (value % (10n ** BigInt(decimals))).toString().padStart(decimals, '0').slice(0, 6);
   return `${whole.toLocaleString()}.${fraction}`;
 }
 
@@ -74,7 +74,7 @@ async function readStakedBalance(address, decimals) {
   if (payload.error || !payload.result) throw new Error('Unable to read staked balance');
   const value = BigInt(payload.result);
   const whole = value / (10n ** BigInt(decimals));
-  const fraction = (value % (10n ** BigInt(decimals))).toString().padStart(decimals, '0').slice(0, 2);
+  const fraction = (value % (10n ** BigInt(decimals))).toString().padStart(decimals, '0').slice(0, 6);
   return `${whole.toLocaleString()}.${fraction}`;
 }
 
@@ -229,13 +229,19 @@ function App() {
     return () => clearInterval(interval);
   }, [wallet, tokenMeta.decimals]);
 
-  const refreshWalletBalances = () => {
+  const refreshWalletBalances = async () => {
     if (!wallet || wallet === 'demo' || !tokenMeta.decimals) return;
-    readTokenBalance(wallet, tokenMeta.decimals).then(setTokenBalance).catch(() => setTokenBalance(null));
-    readStakedBalance(wallet, tokenMeta.decimals).then((balance) => {
-      setStakedBalance(balance);
-      setBoosted(balance !== '0.00');
-    }).catch(() => setStakedBalance(null));
+    const [heldBalance, staked] = await Promise.all([
+      readTokenBalance(wallet, tokenMeta.decimals).catch(() => null),
+      readStakedBalance(wallet, tokenMeta.decimals).catch(() => null),
+    ]);
+    setTokenBalance(heldBalance);
+    if (staked) {
+      setStakedBalance(staked);
+      setBoosted(Number(staked.replace(/,/g, '')) > 0);
+    } else {
+      setStakedBalance(null);
+    }
   };
 
   useEffect(() => {
@@ -282,7 +288,7 @@ function App() {
       await waitForReceipt(stakeHash);
       setStakingStatus('confirmed');
       setBoosted(true);
-      refreshWalletBalances();
+      await refreshWalletBalances();
       setStakeAmount('');
       setStakingStatus('idle');
     } catch {
@@ -297,7 +303,7 @@ function App() {
       setStakingStatus('unstaking');
       const hash = await sendWalletTransaction({ from: wallet, to: STAKING_ADDRESS, data: `0x60217267${amount}` });
       await waitForReceipt(hash);
-      refreshWalletBalances();
+      await refreshWalletBalances();
       setUnstakeAmount('');
       setStakingStatus('idle');
     } catch {
@@ -309,7 +315,7 @@ function App() {
     if (!wallet || wallet === 'demo' || !tokenMeta.decimals) return;
     readStakedBalance(wallet, tokenMeta.decimals).then((balance) => {
       setStakedBalance(balance);
-      setBoosted(balance !== '0.00');
+      setBoosted(Number(balance.replace(/,/g, '')) > 0);
     }).catch(() => setStakedBalance(null));
   };
 
@@ -378,7 +384,7 @@ function App() {
           <div className="access-grid">
             <div className="balance-panel"><div className="panel-top"><span>YOUR BALANCE</span><span className="token-symbol">${tokenMeta.symbol}</span></div><div className="balance-value">{wallet ? wallet === 'demo' ? '12,480.00' : tokenBalance ?? 'Reading...' : '—'} <small>{tokenMeta.symbol}</small></div><div className="balance-usd">{wallet ? wallet === 'demo' ? 'Demo wallet balance' : 'Live contract balance' : `${tokenMeta.name} on testnet`}</div><div className="balance-footer"><span>Token data</span><strong className={tokenMeta.status === 'live' ? 'connected' : ''}>{tokenMeta.status === 'live' ? 'Live' : 'Reading...'}</strong></div></div>
             <div className="stake-panel"><div className="panel-top"><span>STAKE / UNSTAKE</span><LockKeyhole size={16} /></div><div className="staked-readout"><span>ALREADY STAKED</span><strong>{wallet === 'demo' ? 'Demo mode' : stakedBalance ?? 'Reading...'}</strong><button onClick={refreshStakedBalance} disabled={!wallet || wallet === 'demo'} aria-label="Refresh staked balance">↻</button></div><p>Approve VFUEL, then confirm the stake transaction in your wallet.</p><div className="stake-input"><input type="number" min="0" placeholder="0.00" value={stakeAmount} onChange={(event) => setStakeAmount(event.target.value)} /><span>VFUEL</span><button onClick={() => setStakeAmount(tokenBalance?.replace(/,/g, '') || '0')}>MAX</button></div><button className="boost-button" disabled={!wallet || wallet === 'demo' || !stakeAmount || stakingStatus === 'approving' || stakingStatus === 'staking' || stakingStatus === 'unstaking'} onClick={stakeTokens}>{stakingStatus === 'approving' ? 'Confirm approval...' : stakingStatus === 'staking' ? 'Confirm stake...' : stakingStatus === 'confirmed' ? <><Check size={16} /> Stake confirmed</> : <><Zap size={16} /> Approve & stake</>}</button><div className="unstake-row"><input type="number" min="0" placeholder="Amount to unstake" value={unstakeAmount} onChange={(event) => setUnstakeAmount(event.target.value)} /><button disabled={!wallet || wallet === 'demo' || !unstakeAmount || stakingStatus !== 'idle'} onClick={unstakeTokens}>{stakingStatus === 'unstaking' ? 'Confirm...' : 'Unstake'}</button></div></div>
-            <div className={stakedBalance && stakedBalance !== '0.00' ? 'unlock-panel active' : 'unlock-panel'}><div className="unlock-icon"><Zap size={20} fill="currentColor" /></div><div><span>AGENT BOOST</span><h3>{stakedBalance && stakedBalance !== '0.00' ? 'Online & listening' : 'Locked signal'}</h3><p>{stakedBalance && stakedBalance !== '0.00' ? `${stakedBalance} VFUEL staked.` : 'Stake VFUEL to begin your session.'}</p><small className="launch-snapshot">{launchData ? `${launchData.curve.lifecycle} · ${launchData.holderCount} holders · ${formatEth(launchData.analytics?.volume24hWei)} test ETH / 24h` : 'Loading launch snapshot...'}</small></div><span className="lock-state">{stakedBalance && stakedBalance !== '0.00' ? 'LIVE' : <LockKeyhole size={15} />}</span></div>
+            <div className={stakedBalance && Number(stakedBalance.replace(/,/g, '')) > 0 ? 'unlock-panel active' : 'unlock-panel'}><div className="unlock-icon"><Zap size={20} fill="currentColor" /></div><div><span>AGENT BOOST</span><h3>{stakedBalance && Number(stakedBalance.replace(/,/g, '')) > 0 ? 'Online & listening' : 'Locked signal'}</h3><p>{stakedBalance && Number(stakedBalance.replace(/,/g, '')) > 0 ? `${stakedBalance} VFUEL staked.` : 'Stake VFUEL to begin your session.'}</p><small className="launch-snapshot">{launchData ? `${launchData.curve.lifecycle} · ${launchData.holderCount} holders · ${formatEth(launchData.analytics?.volume24hWei)} test ETH / 24h` : 'Loading launch snapshot...'}</small></div><span className="lock-state">{stakedBalance && Number(stakedBalance.replace(/,/g, '')) > 0 ? 'LIVE' : <LockKeyhole size={15} />}</span></div>
           </div>
         </section>
 
