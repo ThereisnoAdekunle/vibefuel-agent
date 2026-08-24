@@ -1,0 +1,21 @@
+# VibeFuelRewards deployment
+
+Deploy `VibeFuelRewards.sol` on Robinhood Chain Testnet (`46630`, hex `0xb626`).
+
+Constructor arguments:
+
+1. Stake token: `0x5B575A0E3d09c3D6d27B475e2eabB45d13bBd91B`
+2. Reward token array, in this exact order:
+   - `0x62f550c1290Be5F05d3784C1b95D71f6FD6D0F5C`
+   - `0x7517639eca815dAA9234B00DdE19beb324D71A08`
+   - `0xFcECeBeFDDF79ecC7bb37dD399EB7f72Dbc6bf7A`
+   - `0x247d87DE6f7018a124969375DFCA8CACb82e5Ee9`
+   - `0xE2D63d0a321399073295076d1b367bE49672eAFc`
+
+The default reward is `1,000` units of each reward token per completed 7-day period. The minimum stake is `100,000 VFUEL` (18 decimals). Missed periods accrue and can be claimed with `claimRewards()`.
+
+Before users can claim, the owner must approve this contract to spend each reward token and call `fundRewards(amounts)`. To fund one period for one user, approve and fund `[1000, 1000, 1000, 1000, 1000]` token units, assuming all tokens use 18 decimals.
+
+Owner-only `setRewardTerms` can change future reward amounts. It cannot withdraw user stakes. The contract has no reward minting and no owner withdrawal function. Never put a private key or seed phrase in the repository or frontend.
+
+Important: this new contract is separate from the original `VibeFuelStaking` contract. Existing stakes in the old contract do not count here. Users must stake into this rewards contract after it is deployed.
