@@ -28,3 +28,7 @@ main { max-width: 1270px; margin: auto; padding: 0 5.5vw; }.hero-grid { min-heig
 .unstake-row button { border: 1px solid #53544c; background: transparent; color: var(--coral); padding: 0 12px; font: 10px 'DM Mono', monospace; }
 .unstake-row button:not(:disabled):hover { border-color: var(--coral); }
 .unstake-row button:disabled { color: #555750; cursor: not-allowed; }
+.staked-readout { display: flex; align-items: center; gap: 9px; margin-top: 20px; color: #777872; font: 10px 'DM Mono', monospace; }
+.staked-readout strong { color: var(--mint); font-size: 12px; font-weight: 400; margin-left: auto; }
+.staked-readout button { border: 0; background: none; color: var(--lime); font-size: 16px; padding: 0; }
+.staked-readout button:disabled { color: #555750; cursor: not-allowed; }
