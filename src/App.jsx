@@ -112,6 +112,13 @@ async function readLaunchData(address = CONTRACT_ADDRESS) {
   return payload.data;
 }
 
+async function readActivity(address = CONTRACT_ADDRESS) {
+  const response = await fetch(`/api/activity?address=${encodeURIComponent(address)}`);
+  const payload = await response.json();
+  if (!response.ok || payload.error || !payload.data) throw new Error('Unable to read activity');
+  return payload.data.items ?? [];
+}
+
 function formatEth(wei) {
   if (!wei) return '0';
   const value = BigInt(wei);
@@ -143,6 +150,13 @@ function LaunchMetrics({ data, launchpadUrl }) {
       <div className="metrics-grid"><div><span>VIBE SCORE</span><strong>{score}/100</strong></div><div><span>STATUS</span><strong>{data.curve.lifecycle}</strong></div><div><span>GRADUATION</span><strong>{formatPercent(data.curve.progressBps)}</strong></div><div><span>HOLDERS</span><strong>{data.holderCount}</strong></div><div><span>24H VOLUME</span><strong>{formatEth(data.analytics?.volume24hWei)} ETH</strong></div><div><span>1H FLOW</span><strong>{data.analytics?.buyCount1h ?? 0} buys / {data.analytics?.sellCount1h ?? 0} sells</strong></div></div>
       <p className="metrics-note">Positive signal: {data.analytics?.uniqueBuyers1h ?? 0} unique buyers in the last hour. Risk: testnet activity is volatile and is not financial advice.</p>
     </div>
+  );
+}
+
+function ActivityFeed({ items }) {
+  if (!items) return null;
+  return (
+    <div className="activity-feed"><div className="activity-heading"><div><span className="section-kicker">CONFIRMED ACTIVITY</span><h3>Recent flow</h3></div><span className="activity-live">● INDEXED LIVE</span></div>{items.length === 0 ? <p className="metrics-note">No indexed trades yet.</p> : <div className="activity-list">{items.map((item) => <div className="activity-item" key={item.id}><strong className={item.side === 'BUY' ? 'buy' : 'sell'}>{item.side}</strong><span>{shortenAddress(item.actorAddress)}</span><span>{formatEth(item.amountInBaseUnits)} ETH</span><small>{new Date(item.occurredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></div>)}</div>}<p className="metrics-note">Confirmed launchpad events only. Testnet activity is not financial advice.</p></div>
   );
 }
 
@@ -183,6 +197,7 @@ function App() {
   const [tokenMeta, setTokenMeta] = useState({ name: 'VIBE FUEL', symbol: 'VFUEL', status: 'loading' });
   const [tokenBalance, setTokenBalance] = useState(null);
   const [launchData, setLaunchData] = useState(null);
+  const [activityItems, setActivityItems] = useState(null);
   const [trackedAddress, setTrackedAddress] = useState(CONTRACT_ADDRESS);
   const [lookupAddress, setLookupAddress] = useState('');
   const [lookupStatus, setLookupStatus] = useState('idle');
@@ -205,7 +220,10 @@ function App() {
 
   useEffect(() => {
     let active = true;
-    const refresh = () => readLaunchData(trackedAddress).then((data) => { if (active) setLaunchData(data); }).catch(() => {});
+    const refresh = () => {
+      readLaunchData(trackedAddress).then((data) => { if (active) setLaunchData(data); }).catch(() => {});
+      readActivity(trackedAddress).then((items) => { if (active) setActivityItems(items); }).catch(() => {});
+    };
     refresh();
     const interval = setInterval(refresh, 30000);
     return () => { active = false; clearInterval(interval); };
@@ -336,6 +354,7 @@ function App() {
 
         <section className="dashboard" id="agent">
           <LaunchMetrics data={launchData} launchpadUrl={trackedLaunchpadUrl} />
+          <ActivityFeed items={activityItems} />
           <div className="dashboard-head"><div><p className="section-kicker">01 / ACCESS PROTOCOL</p><h2>Fuel the signal.</h2></div><div className="chain-label"><span className="status-dot" /> Robinhood Chain <b>TESTNET</b></div></div>
           <div className="access-grid">
             <div className="balance-panel"><div className="panel-top"><span>YOUR BALANCE</span><span className="token-symbol">${tokenMeta.symbol}</span></div><div className="balance-value">{wallet ? wallet === 'demo' ? '12,480.00' : tokenBalance ?? 'Reading...' : '—'} <small>{tokenMeta.symbol}</small></div><div className="balance-usd">{wallet ? wallet === 'demo' ? 'Demo wallet balance' : 'Live contract balance' : `${tokenMeta.name} on testnet`}</div><div className="balance-footer"><span>Token data</span><strong className={tokenMeta.status === 'live' ? 'connected' : ''}>{tokenMeta.status === 'live' ? 'Live' : 'Reading...'}</strong></div></div>
