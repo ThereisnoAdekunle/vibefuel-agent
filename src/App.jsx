@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Interface } from 'ethers';
 import {
   ArrowUpRight,
   Bot,
@@ -19,7 +20,9 @@ import {
 
 const TESTNET = { id: '0xb626', name: 'Robinhood Chain Testnet' };
 const CONTRACT_ADDRESS = '0x5B575A0E3d09c3D6d27B475e2eabB45d13bBd91B';
-const STAKING_ADDRESS = '0x056DD2Ff629BF8Fa51F3Ec126843d96D1e39cf5e';
+const STAKING_ADDRESS = '0x1E0070d9287f3546b86D4D57d9653a36C3b39C58';
+const erc20Interface = new Interface(['function approve(address spender,uint256 amount)']);
+const rewardsInterface = new Interface(['function stake(uint256 amount)', 'function unstake(uint256 amount)', 'function stakedBalance(address account) view returns (uint256)', 'function pendingRewards(address account) view returns (uint256[5])', 'function claimRewards()']);
 
 const suggestions = [
   { label: 'Analyze this CA', icon: CircleHelp },
@@ -68,7 +71,7 @@ async function readTokenBalance(address, decimals) {
 }
 
 async function readStakedBalance(address, decimals) {
-  const data = `0x817b1cd2${address.slice(2).padStart(64, '0')}`;
+  const data = rewardsInterface.encodeFunctionData('stakedBalance', [address]);
   const response = await fetch(RPC_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: STAKING_ADDRESS, data }, 'latest'] }) });
   const payload = await response.json();
   if (payload.error || !payload.result) throw new Error('Unable to read staked balance');
@@ -76,6 +79,14 @@ async function readStakedBalance(address, decimals) {
   const whole = value / (10n ** BigInt(decimals));
   const fraction = (value % (10n ** BigInt(decimals))).toString().padStart(decimals, '0').slice(0, 6);
   return `${whole.toLocaleString()}.${fraction}`;
+}
+
+async function readPendingRewards(address, decimals) {
+  const response = await fetch(RPC_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: STAKING_ADDRESS, data: rewardsInterface.encodeFunctionData('pendingRewards', [address]) }, 'latest'] }) });
+  const payload = await response.json();
+  if (payload.error || !payload.result) throw new Error('Unable to read pending rewards');
+  const [amounts] = rewardsInterface.decodeFunctionResult('pendingRewards', payload.result);
+  return amounts.map((amount) => Number(amount / (10n ** BigInt(decimals))).toLocaleString());
 }
 
 function parseTokenAmount(amount, decimals) {
@@ -167,6 +178,10 @@ function ActivityFeed({ items }) {
   );
 }
 
+function RewardsSummary({ pendingRewards, onClaim, status, enabled }) {
+  return <div className="rewards-summary"><div><span className="section-kicker">REWARD VAULT</span><h3>Weekly basket</h3><p>1,000 units of each reward token after every completed 7-day period.</p></div><div className="reward-values">{pendingRewards ? pendingRewards.map((amount, index) => <span key={index}>TOKEN {index + 1} <strong>{amount}</strong></span>) : <span>Connect wallet to read pending rewards.</span>}</div><button disabled={!enabled || status === 'claiming'} onClick={onClaim}>{status === 'claiming' ? 'Claiming...' : 'Claim 7d rewards'}</button></div>;
+}
+
 function TrendingFeed({ items }) {
   if (!items?.length) return null;
   return <div className="ticker" id="about"><div><span className="ticker-dot" /> VIBE VIBE / LIVE TRENDING</div><div className="ticker-items">{items.map((item) => <a href={`https://testnet.vibevibe.fun/token/${item.tokenAddress}`} target="_blank" rel="noreferrer" key={item.tokenAddress}>${item.symbol} <b>{formatPercent(item.priceChange5mBps)}</b></a>)}</div><span className="ticker-live">INDEXED NOW</span></div>;
@@ -215,6 +230,8 @@ function App() {
   const [lookupAddress, setLookupAddress] = useState('');
   const [lookupStatus, setLookupStatus] = useState('idle');
   const [stakedBalance, setStakedBalance] = useState(null);
+  const [pendingRewards, setPendingRewards] = useState(null);
+  const [rewardStatus, setRewardStatus] = useState('idle');
   const [stakingStatus, setStakingStatus] = useState('idle');
   const trackedLaunchpadUrl = `https://testnet.vibevibe.fun/token/${trackedAddress}`;
 
@@ -236,6 +253,7 @@ function App() {
       readStakedBalance(wallet, tokenMeta.decimals).catch(() => null),
     ]);
     setTokenBalance(heldBalance);
+    readPendingRewards(wallet, tokenMeta.decimals).then(setPendingRewards).catch(() => setPendingRewards(null));
     if (staked) {
       setStakedBalance(staked);
       setBoosted(Number(staked.replace(/,/g, '')) > 0);
@@ -281,10 +299,10 @@ function App() {
     try {
       const amount = parseTokenAmount(stakeAmount, tokenMeta.decimals);
       setStakingStatus('approving');
-      const approvalHash = await sendWalletTransaction({ from: wallet, to: CONTRACT_ADDRESS, data: `0x095ea7b3${STAKING_ADDRESS.slice(2).padStart(64, '0')}${amount}` });
+      const approvalHash = await sendWalletTransaction({ from: wallet, to: CONTRACT_ADDRESS, data: erc20Interface.encodeFunctionData('approve', [STAKING_ADDRESS, BigInt(`0x${amount}`)]) });
       await waitForReceipt(approvalHash);
       setStakingStatus('staking');
-      const stakeHash = await sendWalletTransaction({ from: wallet, to: STAKING_ADDRESS, data: `0xa694fc3a${amount}` });
+      const stakeHash = await sendWalletTransaction({ from: wallet, to: STAKING_ADDRESS, data: rewardsInterface.encodeFunctionData('stake', [BigInt(`0x${amount}`)]) });
       await waitForReceipt(stakeHash);
       setStakingStatus('confirmed');
       setBoosted(true);
@@ -301,7 +319,7 @@ function App() {
     try {
       const amount = parseTokenAmount(unstakeAmount, tokenMeta.decimals);
       setStakingStatus('unstaking');
-      const hash = await sendWalletTransaction({ from: wallet, to: STAKING_ADDRESS, data: `0x60217267${amount}` });
+      const hash = await sendWalletTransaction({ from: wallet, to: STAKING_ADDRESS, data: rewardsInterface.encodeFunctionData('unstake', [BigInt(`0x${amount}`)]) });
       await waitForReceipt(hash);
       await refreshWalletBalances();
       setUnstakeAmount('');
@@ -311,12 +329,22 @@ function App() {
     }
   };
 
+  const claimRewards = async () => {
+    if (!wallet || wallet === 'demo' || rewardStatus === 'claiming') return;
+    try {
+      setRewardStatus('claiming');
+      const hash = await sendWalletTransaction({ from: wallet, to: STAKING_ADDRESS, data: rewardsInterface.encodeFunctionData('claimRewards') });
+      await waitForReceipt(hash);
+      await refreshWalletBalances();
+    } catch {
+    } finally {
+      setRewardStatus('idle');
+    }
+  };
+
   const refreshStakedBalance = () => {
     if (!wallet || wallet === 'demo' || !tokenMeta.decimals) return;
-    readStakedBalance(wallet, tokenMeta.decimals).then((balance) => {
-      setStakedBalance(balance);
-      setBoosted(Number(balance.replace(/,/g, '')) > 0);
-    }).catch(() => setStakedBalance(null));
+    refreshWalletBalances();
   };
 
   const sendQuestion = async (text = question) => {
@@ -380,6 +408,7 @@ function App() {
         <section className="dashboard" id="agent">
           <LaunchMetrics data={launchData} launchpadUrl={trackedLaunchpadUrl} />
           <ActivityFeed items={activityItems} />
+          <RewardsSummary pendingRewards={pendingRewards} onClaim={claimRewards} status={rewardStatus} enabled={wallet && wallet !== 'demo'} />
           <div className="dashboard-head"><div><p className="section-kicker">01 / ACCESS PROTOCOL</p><h2>Fuel the signal.</h2></div><div className="chain-label"><span className="status-dot" /> Robinhood Chain <b>TESTNET</b></div></div>
           <div className="access-grid">
             <div className="balance-panel"><div className="panel-top"><span>YOUR BALANCE</span><span className="token-symbol">${tokenMeta.symbol}</span></div><div className="balance-value">{wallet ? wallet === 'demo' ? '12,480.00' : tokenBalance ?? 'Reading...' : '—'} <small>{tokenMeta.symbol}</small></div><div className="balance-usd">{wallet ? wallet === 'demo' ? 'Demo wallet balance' : 'Live contract balance' : `${tokenMeta.name} on testnet`}</div><div className="balance-footer"><span>Token data</span><strong className={tokenMeta.status === 'live' ? 'connected' : ''}>{tokenMeta.status === 'live' ? 'Live' : 'Reading...'}</strong></div></div>
