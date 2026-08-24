@@ -91,6 +91,20 @@ async function sendWalletTransaction(transaction) {
   return window.ethereum.request({ method: 'eth_sendTransaction', params: [transaction] });
 }
 
+async function waitForReceipt(hash) {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const response = await fetch(RPC_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getTransactionReceipt', params: [hash] }) });
+    const payload = await response.json();
+    if (payload.error) throw new Error('Unable to confirm transaction');
+    if (payload.result) {
+      if (payload.result.status !== '0x1') throw new Error('Transaction reverted');
+      return payload.result;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error('Transaction confirmation timed out');
+}
+
 async function readLaunchData(address = CONTRACT_ADDRESS) {
   const response = await fetch(`/api/launch?address=${encodeURIComponent(address)}`);
   const payload = await response.json();
@@ -138,6 +152,7 @@ function TokenLookup({ address, onAddressChange, onScan, status }) {
 function App() {
   const [wallet, setWallet] = useState(null);
   const [stakeAmount, setStakeAmount] = useState('');
+  const [unstakeAmount, setUnstakeAmount] = useState('');
   const [boosted, setBoosted] = useState(false);
   const [copied, setCopied] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -199,13 +214,33 @@ function App() {
     try {
       const amount = parseTokenAmount(stakeAmount, tokenMeta.decimals);
       setStakingStatus('approving');
-      await sendWalletTransaction({ from: wallet, to: CONTRACT_ADDRESS, data: `0x095ea7b3${STAKING_ADDRESS.slice(2).padStart(64, '0')}${amount}` });
+      const approvalHash = await sendWalletTransaction({ from: wallet, to: CONTRACT_ADDRESS, data: `0x095ea7b3${STAKING_ADDRESS.slice(2).padStart(64, '0')}${amount}` });
+      await waitForReceipt(approvalHash);
       setStakingStatus('staking');
-      await sendWalletTransaction({ from: wallet, to: STAKING_ADDRESS, data: `0xa694fc3a${amount}` });
+      const stakeHash = await sendWalletTransaction({ from: wallet, to: STAKING_ADDRESS, data: `0xa694fc3a${amount}` });
+      await waitForReceipt(stakeHash);
       setStakingStatus('confirmed');
       setBoosted(true);
       readStakedBalance(wallet, tokenMeta.decimals).then(setStakedBalance).catch(() => {});
       setStakeAmount('');
+      setStakingStatus('idle');
+    } catch {
+      setStakingStatus('idle');
+    }
+  };
+
+  const unstakeTokens = async () => {
+    if (!wallet || wallet === 'demo' || !tokenMeta.decimals || !unstakeAmount) return;
+    try {
+      const amount = parseTokenAmount(unstakeAmount, tokenMeta.decimals);
+      setStakingStatus('unstaking');
+      const hash = await sendWalletTransaction({ from: wallet, to: STAKING_ADDRESS, data: `0x60217267${amount}` });
+      await waitForReceipt(hash);
+      const balance = await readStakedBalance(wallet, tokenMeta.decimals);
+      setStakedBalance(balance);
+      setBoosted(balance !== '0.00');
+      setUnstakeAmount('');
+      setStakingStatus('idle');
     } catch {
       setStakingStatus('idle');
     }
@@ -273,7 +308,7 @@ function App() {
           <div className="dashboard-head"><div><p className="section-kicker">01 / ACCESS PROTOCOL</p><h2>Fuel the signal.</h2></div><div className="chain-label"><span className="status-dot" /> Robinhood Chain <b>TESTNET</b></div></div>
           <div className="access-grid">
             <div className="balance-panel"><div className="panel-top"><span>YOUR BALANCE</span><span className="token-symbol">${tokenMeta.symbol}</span></div><div className="balance-value">{wallet ? wallet === 'demo' ? '12,480.00' : tokenBalance ?? 'Reading...' : '—'} <small>{tokenMeta.symbol}</small></div><div className="balance-usd">{wallet ? wallet === 'demo' ? 'Demo wallet balance' : 'Live contract balance' : `${tokenMeta.name} on testnet`}</div><div className="balance-footer"><span>Token data</span><strong className={tokenMeta.status === 'live' ? 'connected' : ''}>{tokenMeta.status === 'live' ? 'Live' : 'Reading...'}</strong></div></div>
-            <div className="stake-panel"><div className="panel-top"><span>STAKE TO UNLOCK</span><LockKeyhole size={16} /></div><p>Approve VFUEL, then confirm the stake transaction in your wallet.</p><div className="stake-input"><input type="number" min="0" placeholder="0.00" value={stakeAmount} onChange={(event) => setStakeAmount(event.target.value)} /><span>VFUEL</span><button onClick={() => setStakeAmount(tokenBalance?.replace(/,/g, '') || '0')}>MAX</button></div><button className="boost-button" disabled={!wallet || wallet === 'demo' || !stakeAmount || stakingStatus === 'approving' || stakingStatus === 'staking'} onClick={stakeTokens}>{stakingStatus === 'approving' ? 'Confirm approval...' : stakingStatus === 'staking' ? 'Confirm stake...' : stakingStatus === 'confirmed' ? <><Check size={16} /> Stake confirmed</> : <><Zap size={16} /> Approve & stake</>}</button></div>
+            <div className="stake-panel"><div className="panel-top"><span>STAKE / UNSTAKE</span><LockKeyhole size={16} /></div><p>Approve VFUEL, then confirm the stake transaction in your wallet.</p><div className="stake-input"><input type="number" min="0" placeholder="0.00" value={stakeAmount} onChange={(event) => setStakeAmount(event.target.value)} /><span>VFUEL</span><button onClick={() => setStakeAmount(tokenBalance?.replace(/,/g, '') || '0')}>MAX</button></div><button className="boost-button" disabled={!wallet || wallet === 'demo' || !stakeAmount || stakingStatus === 'approving' || stakingStatus === 'staking' || stakingStatus === 'unstaking'} onClick={stakeTokens}>{stakingStatus === 'approving' ? 'Confirm approval...' : stakingStatus === 'staking' ? 'Confirm stake...' : stakingStatus === 'confirmed' ? <><Check size={16} /> Stake confirmed</> : <><Zap size={16} /> Approve & stake</>}</button><div className="unstake-row"><input type="number" min="0" placeholder="Amount to unstake" value={unstakeAmount} onChange={(event) => setUnstakeAmount(event.target.value)} /><button disabled={!wallet || wallet === 'demo' || !unstakeAmount || stakingStatus !== 'idle'} onClick={unstakeTokens}>{stakingStatus === 'unstaking' ? 'Confirm...' : 'Unstake'}</button></div></div>
             <div className={stakedBalance && stakedBalance !== '0.00' ? 'unlock-panel active' : 'unlock-panel'}><div className="unlock-icon"><Zap size={20} fill="currentColor" /></div><div><span>AGENT BOOST</span><h3>{stakedBalance && stakedBalance !== '0.00' ? 'Online & listening' : 'Locked signal'}</h3><p>{stakedBalance && stakedBalance !== '0.00' ? `${stakedBalance} VFUEL staked.` : 'Stake VFUEL to begin your session.'}</p><small className="launch-snapshot">{launchData ? `${launchData.curve.lifecycle} · ${launchData.holderCount} holders · ${formatEth(launchData.analytics?.volume24hWei)} test ETH / 24h` : 'Loading launch snapshot...'}</small></div><span className="lock-state">{stakedBalance && stakedBalance !== '0.00' ? 'LIVE' : <LockKeyhole size={15} />}</span></div>
           </div>
         </section>
