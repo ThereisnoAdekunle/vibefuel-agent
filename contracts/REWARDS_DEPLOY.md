@@ -16,6 +16,6 @@ The default reward is `1,000` units of each reward token per completed 7-day per
 
 Before users can claim, the owner must approve this contract to spend each reward token and call `fundRewards(amounts)`. To fund one period for one user, approve and fund `[1000, 1000, 1000, 1000, 1000]` token units, assuming all tokens use 18 decimals.
 
-Owner-only `setRewardTerms` can change future reward amounts. It cannot withdraw user stakes. The contract has no reward minting and no owner withdrawal function. Never put a private key or seed phrase in the repository or frontend.
+Owner-only `setRewardTerms` can change the reward amounts at any time; the current amounts are used when a claim is made, including periods that accrued since the previous claim. It cannot withdraw user stakes. The contract has no reward minting and no owner withdrawal function. Never put a private key or seed phrase in the repository or frontend.
 
 Important: this new contract is separate from the original `VibeFuelStaking` contract. Existing stakes in the old contract do not count here. Users must stake into this rewards contract after it is deployed.
