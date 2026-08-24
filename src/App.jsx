@@ -20,7 +20,7 @@ import {
 
 const TESTNET = { id: '0xb626', name: 'Robinhood Chain Testnet' };
 const CONTRACT_ADDRESS = '0x5B575A0E3d09c3D6d27B475e2eabB45d13bBd91B';
-const STAKING_ADDRESS = '0x1E0070d9287f3546b86D4D57d9653a36C3b39C58';
+const STAKING_ADDRESS = '0xBcE8D74f62Ef38511B54c7821aD4F645E1843920';
 const erc20Interface = new Interface(['function approve(address spender,uint256 amount)']);
 const rewardsInterface = new Interface(['function stake(uint256 amount)', 'function unstake(uint256 amount)', 'function stakedBalance(address account) view returns (uint256)', 'function pendingRewards(address account) view returns (uint256[5])', 'function claimRewards()']);
 
@@ -179,7 +179,7 @@ function ActivityFeed({ items }) {
 }
 
 function RewardsSummary({ pendingRewards, onClaim, status, enabled }) {
-  return <div className="rewards-summary"><div><span className="section-kicker">REWARD VAULT</span><h3>Weekly basket</h3><p>1,000 units of each reward token after every completed 7-day period.</p></div><div className="reward-values">{pendingRewards ? pendingRewards.map((amount, index) => <span key={index}>TOKEN {index + 1} <strong>{amount}</strong></span>) : <span>Connect wallet to read pending rewards.</span>}</div><button disabled={!enabled || status === 'claiming'} onClick={onClaim}>{status === 'claiming' ? 'Claiming...' : 'Claim 7d rewards'}</button></div>;
+  return <div className="rewards-summary"><div><span className="section-kicker">REWARD VAULT</span><h3>Weekly basket</h3><p>Each 7-day pool is shared by eligible wallets according to their VFUEL stake.</p></div><div className="reward-values">{pendingRewards ? pendingRewards.map((amount, index) => <span key={index}>TOKEN {index + 1} <strong>{amount}</strong></span>) : <span>Connect wallet to read pending rewards.</span>}</div><button disabled={!enabled || status === 'claiming'} onClick={onClaim}>{status === 'claiming' ? 'Claiming...' : 'Claim 7d rewards'}</button></div>;
 }
 
 function TrendingFeed({ items }) {
