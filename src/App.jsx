@@ -211,12 +211,19 @@ function App() {
 
   useEffect(() => {
     if (!wallet || wallet === 'demo' || !tokenMeta.decimals) return;
+    refreshWalletBalances();
+    const interval = setInterval(refreshWalletBalances, 15000);
+    return () => clearInterval(interval);
+  }, [wallet, tokenMeta.decimals]);
+
+  const refreshWalletBalances = () => {
+    if (!wallet || wallet === 'demo' || !tokenMeta.decimals) return;
     readTokenBalance(wallet, tokenMeta.decimals).then(setTokenBalance).catch(() => setTokenBalance(null));
     readStakedBalance(wallet, tokenMeta.decimals).then((balance) => {
       setStakedBalance(balance);
       setBoosted(balance !== '0.00');
     }).catch(() => setStakedBalance(null));
-  }, [wallet, tokenMeta.decimals]);
+  };
 
   useEffect(() => {
     let active = true;
@@ -261,7 +268,7 @@ function App() {
       await waitForReceipt(stakeHash);
       setStakingStatus('confirmed');
       setBoosted(true);
-      readStakedBalance(wallet, tokenMeta.decimals).then(setStakedBalance).catch(() => {});
+      refreshWalletBalances();
       setStakeAmount('');
       setStakingStatus('idle');
     } catch {
@@ -276,9 +283,7 @@ function App() {
       setStakingStatus('unstaking');
       const hash = await sendWalletTransaction({ from: wallet, to: STAKING_ADDRESS, data: `0x60217267${amount}` });
       await waitForReceipt(hash);
-      const balance = await readStakedBalance(wallet, tokenMeta.decimals);
-      setStakedBalance(balance);
-      setBoosted(balance !== '0.00');
+      refreshWalletBalances();
       setUnstakeAmount('');
       setStakingStatus('idle');
     } catch {
