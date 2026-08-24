@@ -119,6 +119,13 @@ async function readActivity(address = CONTRACT_ADDRESS) {
   return payload.data.items ?? [];
 }
 
+async function readTrending() {
+  const response = await fetch('/api/trending');
+  const payload = await response.json();
+  if (!response.ok || payload.error || !payload.data) throw new Error('Unable to read trending tokens');
+  return payload.data.items;
+}
+
 function formatEth(wei) {
   if (!wei) return '0';
   const value = BigInt(wei);
@@ -160,6 +167,11 @@ function ActivityFeed({ items }) {
   );
 }
 
+function TrendingFeed({ items }) {
+  if (!items?.length) return null;
+  return <div className="ticker" id="about"><div><span className="ticker-dot" /> VIBE VIBE / LIVE TRENDING</div><div className="ticker-items">{items.map((item) => <a href={`https://testnet.vibevibe.fun/token/${item.tokenAddress}`} target="_blank" rel="noreferrer" key={item.tokenAddress}>${item.symbol} <b>{formatPercent(item.priceChange5mBps)}</b></a>)}</div><span className="ticker-live">INDEXED NOW</span></div>;
+}
+
 function shortenAddress(address) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
@@ -198,6 +210,7 @@ function App() {
   const [tokenBalance, setTokenBalance] = useState(null);
   const [launchData, setLaunchData] = useState(null);
   const [activityItems, setActivityItems] = useState(null);
+  const [trendingItems, setTrendingItems] = useState(null);
   const [trackedAddress, setTrackedAddress] = useState(CONTRACT_ADDRESS);
   const [lookupAddress, setLookupAddress] = useState('');
   const [lookupStatus, setLookupStatus] = useState('idle');
@@ -230,6 +243,7 @@ function App() {
     const refresh = () => {
       readLaunchData(trackedAddress).then((data) => { if (active) setLaunchData(data); }).catch(() => {});
       readActivity(trackedAddress).then((items) => { if (active) setActivityItems(items); }).catch(() => {});
+      readTrending().then((items) => { if (active) setTrendingItems(items); }).catch(() => {});
     };
     refresh();
     const interval = setInterval(refresh, 30000);
@@ -370,7 +384,7 @@ function App() {
 
         <section className="agent-console" id="launchpad"><div className="console-head"><div className="agent-title"><div className="live-avatar"><Bot size={20} /></div><div><h2>VibeFuel Agent <span>● LIVE</span></h2><p>Launchpad intelligence, with a little extra sauce.</p></div></div><div className="ca-display"><span>TARGET CA</span><strong>{`${CONTRACT_ADDRESS.slice(0, 6)}...${CONTRACT_ADDRESS.slice(-4)}`}</strong><button onClick={copyCa} aria-label="Copy token contract address">{copied ? <Check size={14} /> : <Copy size={14} />}</button></div></div><div className="chat-window"><AgentMessage>{boosted ? <>Boost confirmed. I’m locked in and watching the launchpad. <strong>Drop a contract address or ask me anything.</strong></> : <>Your agent channel is waiting. Stake $VFUEL above to start decoding the launchpad.</>}</AgentMessage>{messages.map((message, index) => <div key={index}><div className="message-row user-row"><div className="message user-message">{message.prompt}</div></div><AgentMessage>{message.reply}</AgentMessage></div>)}{messages.length === 0 && <div className="suggestions">{suggestions.map(({ label, icon: Icon }) => <button key={label} disabled={!boosted} onClick={() => sendQuestion(label)}><Icon size={15} /> {label}</button>)}</div>}</div><form className="chat-input" onSubmit={(event) => { event.preventDefault(); sendQuestion(); }}><input value={question} disabled={!boosted} onChange={(event) => setQuestion(event.target.value)} placeholder={boosted ? 'Ask your agent about a token...' : 'Stake VFUEL to activate chat'} /><button disabled={!boosted || !question.trim()} aria-label="Send question"><Send size={17} /></button></form></section>
 
-        <section className="ticker" id="about"><div><span className="ticker-dot" /> VIBE VIBE / SIGNAL FEED</div><div className="ticker-items"><span>$MOONCAT <b>+24.8%</b></span><span>$BASED <b>+18.2%</b></span><span>$VIBES <b>+11.7%</b></span></div><a href={trackedLaunchpadUrl} target="_blank" rel="noreferrer">View launchpad <ArrowUpRight size={15} /></a></section>
+        <TrendingFeed items={trendingItems} />
       </main>
       <footer><span>VibeFuel Agent v0.1</span><span>Built for the vibe economy <Flame size={13} fill="currentColor" /></span><span>Robinhood Chain Testnet · 46630</span></footer>
     </div>
