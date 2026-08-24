@@ -124,6 +124,28 @@ function formatPercent(bps) {
   return `${(Number(bps || 0) / 100).toFixed(1)}%`;
 }
 
+function getVibeScore(data) {
+  if (!data) return null;
+  let score = 50;
+  if (data.curve?.lifecycle === 'GRADUATED') score += 20;
+  if ((data.holderCount ?? 0) >= 40) score += 15;
+  if ((data.analytics?.uniqueBuyers1h ?? 0) >= 20) score += 10;
+  if (BigInt(data.analytics?.volume24hWei ?? 0) > 0n) score += 5;
+  return Math.min(score, 100);
+}
+
+function LaunchMetrics({ data, launchpadUrl }) {
+  if (!data) return null;
+  const score = getVibeScore(data);
+  return (
+    <div className="launch-metrics">
+      <div className="metrics-heading"><div><span className="section-kicker">LIVE LAUNCH READ</span><h3>{data.name} <small>${data.symbol}</small></h3></div><a href={launchpadUrl} target="_blank" rel="noreferrer">Open on Vibe Vibe <ExternalLink size={13} /></a></div>
+      <div className="metrics-grid"><div><span>VIBE SCORE</span><strong>{score}/100</strong></div><div><span>STATUS</span><strong>{data.curve.lifecycle}</strong></div><div><span>GRADUATION</span><strong>{formatPercent(data.curve.progressBps)}</strong></div><div><span>HOLDERS</span><strong>{data.holderCount}</strong></div><div><span>24H VOLUME</span><strong>{formatEth(data.analytics?.volume24hWei)} ETH</strong></div><div><span>1H FLOW</span><strong>{data.analytics?.buyCount1h ?? 0} buys / {data.analytics?.sellCount1h ?? 0} sells</strong></div></div>
+      <p className="metrics-note">Positive signal: {data.analytics?.uniqueBuyers1h ?? 0} unique buyers in the last hour. Risk: testnet activity is volatile and is not financial advice.</p>
+    </div>
+  );
+}
+
 function shortenAddress(address) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
@@ -282,12 +304,12 @@ function App() {
     if (lower.includes('charge') || lower.includes('vibe viber')) return chargeReply;
     if (lower.includes('analyze')) {
       const address = addressMatch ? `${addressMatch[0].slice(0, 6)}...${addressMatch[0].slice(-4)}` : `${CONTRACT_ADDRESS.slice(0, 6)}...${CONTRACT_ADDRESS.slice(-4)}`;
-      if (data) return <>Deep scan on <strong>{address}</strong>: <strong>Vibe Score {data.curve.lifecycle === 'GRADUATED' ? '86' : '74'}/100</strong>. <strong>{data.name} (${data.symbol})</strong> is {data.curve.lifecycle.toLowerCase()} with {data.holderCount} holders and {formatEth(data.analytics?.volume24hWei)} test ETH in 24h volume. Graduation progress is <strong>{formatPercent(data.curve.progressBps)}</strong>. Positive signal: {data.analytics?.uniqueBuyers1h ?? 0} unique buyers in the last hour. Risk signal: liquidity and holder concentration can change quickly. <strong>Tip: inspect the latest trades and holder spread before acting.</strong> Not financial advice.</>;
+      if (data) return <>Deep scan on <strong>{address}</strong>: <strong>Vibe Score {getVibeScore(data)}/100</strong>. <strong>{data.name} (${data.symbol})</strong> is {data.curve.lifecycle.toLowerCase()} with {data.holderCount} holders and {formatEth(data.analytics?.volume24hWei)} test ETH in 24h volume. Graduation progress is <strong>{formatPercent(data.curve.progressBps)}</strong>. Positive signal: {data.analytics?.uniqueBuyers1h ?? 0} unique buyers in the last hour. Risk signal: liquidity and holder concentration can change quickly. <strong>Tip: inspect the latest trades and holder spread before acting.</strong> Not financial advice.</>;
       return <>Deep scan on <strong>{address}</strong>: <strong>Vibe Score 81/100</strong>. Narrative strength is high, recent activity looks organic enough for a testnet launch, and the launch has room to build. <strong>Graduation Probability: 72%</strong>, assuming liquidity and holder growth continue. Positive signals: active volume and improving holder count. Risk signals: top-wallet concentration and momentum that could fade quickly. <strong>Tip: inspect the holder spread, liquidity depth, and recent trades before acting.</strong> Not financial advice.</>;
     }
     if (addressMatch || lower.includes('analyze') || lower.includes('score') || lower.includes('vibe') || lower.includes('graduat')) {
       const address = addressMatch ? `${addressMatch[0].slice(0, 6)}...${addressMatch[0].slice(-4)}` : `${CONTRACT_ADDRESS.slice(0, 6)}...${CONTRACT_ADDRESS.slice(-4)}`;
-      if (data) return <>Quick scan on <strong>{address}</strong>: <strong>Vibe Score {data.curve.lifecycle === 'GRADUATED' ? '86' : '74'}/100</strong>. {data.holderCount} holders, {formatEth(data.analytics?.volume24hWei)} test ETH / 24h, and {data.analytics?.buyCount1h ?? 0} buys in the last hour. Status: <strong>{data.curve.lifecycle}</strong>. Signal: {data.analytics?.uniqueBuyers1h ?? 0} unique buyers. Risk: momentum can cool fast. <strong>Tip: compare recent buys with liquidity before your next move.</strong> Not financial advice.</>;
+      if (data) return <>Quick scan on <strong>{address}</strong>: <strong>Vibe Score {getVibeScore(data)}/100</strong>. {data.holderCount} holders, {formatEth(data.analytics?.volume24hWei)} test ETH / 24h, and {data.analytics?.buyCount1h ?? 0} buys in the last hour. Status: <strong>{data.curve.lifecycle}</strong>. Signal: {data.analytics?.uniqueBuyers1h ?? 0} unique buyers. Risk: momentum can cool fast. <strong>Tip: compare recent buys with liquidity before your next move.</strong> Not financial advice.</>;
       return <>Quick scan on <strong>{address}</strong>: <strong>Vibe Score 81/100</strong>. The narrative has lift and the launch looks active. <strong>Graduation Probability: 72%</strong> if liquidity and holder growth keep climbing. Signals: healthy volume, but top-wallet concentration and fast momentum are the risks. <strong>Tip: check liquidity depth and holder spread before your next move.</strong> Not financial advice.</>;
     }
     return <>I’m tuned for Vibe Vibe launches. Drop a contract address, ask for <strong>market signals</strong>, or say <strong>how to charge Vibe Viber</strong>. <strong>Tip: start with the token’s liquidity and holder spread.</strong> Not financial advice.</>;
@@ -313,6 +335,7 @@ function App() {
         </section>
 
         <section className="dashboard" id="agent">
+          <LaunchMetrics data={launchData} launchpadUrl={trackedLaunchpadUrl} />
           <div className="dashboard-head"><div><p className="section-kicker">01 / ACCESS PROTOCOL</p><h2>Fuel the signal.</h2></div><div className="chain-label"><span className="status-dot" /> Robinhood Chain <b>TESTNET</b></div></div>
           <div className="access-grid">
             <div className="balance-panel"><div className="panel-top"><span>YOUR BALANCE</span><span className="token-symbol">${tokenMeta.symbol}</span></div><div className="balance-value">{wallet ? wallet === 'demo' ? '12,480.00' : tokenBalance ?? 'Reading...' : '—'} <small>{tokenMeta.symbol}</small></div><div className="balance-usd">{wallet ? wallet === 'demo' ? 'Demo wallet balance' : 'Live contract balance' : `${tokenMeta.name} on testnet`}</div><div className="balance-footer"><span>Token data</span><strong className={tokenMeta.status === 'live' ? 'connected' : ''}>{tokenMeta.status === 'live' ? 'Live' : 'Reading...'}</strong></div></div>
