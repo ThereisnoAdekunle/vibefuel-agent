@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ArrowUpRight,
   Bot,
@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 
 const TESTNET = { id: '0xb626', name: 'Robinhood Chain Testnet' };
-const CONTRACT = '0x7a2F...e91C';
+const CONTRACT_ADDRESS = '0x5B575A0E3d09c3D6d27B475e2eabB45d13bBd91B';
 
 const suggestions = [
   { label: 'Analyze this CA', icon: CircleHelp },
@@ -29,6 +29,31 @@ const suggestions = [
 const trendReply = <>Testnet pulse check: <strong>$WAGMI +31.4%</strong> on rising volume, <strong>$NOVA +18.7%</strong> with holder growth, <strong>$BARK +9.2%</strong> cooling after a spike, and <strong>$VOID -6.8%</strong> losing liquidity. Positive: attention is rotating into fresh launches. Risk: momentum is thin and trades are irreversible. <strong>Tip: compare holders, volume, and liquidity before aping.</strong></>;
 
 const chargeReply = <>Vibe Vibe does not have a separate “charge” button. The real loop is: create a token, seed its launch, trade on testnet, and build enough activity for graduation. Tokens are permissionless and not vetted, trades are non-custodial and irreversible, and transfers stay locked until graduation succeeds. <strong>Tip: use test ETH only and read the launchpad terms before trading.</strong> This is not financial advice.</>;
+
+const RPC_URL = 'https://rpc.testnet.chain.robinhood.com';
+
+function decodeString(hex) {
+  const payload = hex.replace(/^0x/, '');
+  const bytes = payload.match(/.{2}/g)?.slice(64) ?? [];
+  return new TextDecoder().decode(new Uint8Array(bytes.map((value) => parseInt(value, 16)))).replace(/\0+$/, '');
+}
+
+async function readTokenMetadata() {
+  const calls = [
+    ['name', '0x06fdde03'],
+    ['symbol', '0x95d89b41'],
+    ['decimals', '0x313ce567'],
+    ['totalSupply', '0x18160ddd'],
+  ];
+  const results = await Promise.all(calls.map(async ([key, data]) => {
+    const response = await fetch(RPC_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: CONTRACT_ADDRESS, data }, 'latest'] }) });
+    const payload = await response.json();
+    if (payload.error || !payload.result) throw new Error(`Unable to read ${key}`);
+    return [key, payload.result];
+  }));
+  const raw = Object.fromEntries(results);
+  return { name: decodeString(raw.name), symbol: decodeString(raw.symbol), decimals: Number.parseInt(raw.decimals, 16), totalSupply: BigInt(raw.totalSupply) };
+}
 
 function shortenAddress(address) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -51,6 +76,11 @@ function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState([]);
+  const [tokenMeta, setTokenMeta] = useState({ name: 'VIBE FUEL', symbol: 'VFUEL', status: 'loading' });
+
+  useEffect(() => {
+    readTokenMetadata().then((metadata) => setTokenMeta({ ...metadata, status: 'live' })).catch(() => setTokenMeta((current) => ({ ...current, status: 'offline' })));
+  }, []);
 
   const connectWallet = async () => {
     if (!window.ethereum) {
@@ -67,7 +97,7 @@ function App() {
   };
 
   const copyCa = async () => {
-    await navigator.clipboard?.writeText('0x7a2Ff4b39D11a8ce5D4C0b12e91C');
+    await navigator.clipboard?.writeText(CONTRACT_ADDRESS);
     setCopied(true);
     setTimeout(() => setCopied(false), 1400);
   };
@@ -85,11 +115,11 @@ function App() {
     if (lower.includes('market signal')) return trendReply;
     if (lower.includes('charge') || lower.includes('vibe viber')) return chargeReply;
     if (lower.includes('analyze')) {
-      const address = addressMatch ? `${addressMatch[0].slice(0, 6)}...${addressMatch[0].slice(-4)}` : CONTRACT;
+      const address = addressMatch ? `${addressMatch[0].slice(0, 6)}...${addressMatch[0].slice(-4)}` : `${CONTRACT_ADDRESS.slice(0, 6)}...${CONTRACT_ADDRESS.slice(-4)}`;
       return <>Deep scan on <strong>{address}</strong>: <strong>Vibe Score 81/100</strong>. Narrative strength is high, recent activity looks organic enough for a testnet launch, and the launch has room to build. <strong>Graduation Probability: 72%</strong>, assuming liquidity and holder growth continue. Positive signals: active volume and improving holder count. Risk signals: top-wallet concentration and momentum that could fade quickly. <strong>Tip: inspect the holder spread, liquidity depth, and recent trades before acting.</strong> Not financial advice.</>;
     }
     if (addressMatch || lower.includes('analyze') || lower.includes('score') || lower.includes('vibe') || lower.includes('graduat')) {
-      const address = addressMatch ? `${addressMatch[0].slice(0, 6)}...${addressMatch[0].slice(-4)}` : CONTRACT;
+      const address = addressMatch ? `${addressMatch[0].slice(0, 6)}...${addressMatch[0].slice(-4)}` : `${CONTRACT_ADDRESS.slice(0, 6)}...${CONTRACT_ADDRESS.slice(-4)}`;
       return <>Quick scan on <strong>{address}</strong>: <strong>Vibe Score 81/100</strong>. The narrative has lift and the launch looks active. <strong>Graduation Probability: 72%</strong> if liquidity and holder growth keep climbing. Signals: healthy volume, but top-wallet concentration and fast momentum are the risks. <strong>Tip: check liquidity depth and holder spread before your next move.</strong> Not financial advice.</>;
     }
     return <>I’m tuned for Vibe Vibe launches. Drop a contract address, ask for <strong>market signals</strong>, or say <strong>how to charge Vibe Viber</strong>. <strong>Tip: start with the token’s liquidity and holder spread.</strong> Not financial advice.</>;
@@ -116,13 +146,13 @@ function App() {
         <section className="dashboard" id="agent">
           <div className="dashboard-head"><div><p className="section-kicker">01 / ACCESS PROTOCOL</p><h2>Fuel the signal.</h2></div><div className="chain-label"><span className="status-dot" /> Robinhood Chain <b>TESTNET</b></div></div>
           <div className="access-grid">
-            <div className="balance-panel"><div className="panel-top"><span>YOUR BALANCE</span><span className="token-symbol">$VFUEL</span></div><div className="balance-value">{wallet ? '12,480.00' : '—'} <small>VFUEL</small></div><div className="balance-usd">{wallet ? '≈ $124.80' : 'Connect wallet to view balance'}</div><div className="balance-footer"><span>Wallet status</span><strong className={wallet ? 'connected' : ''}>{wallet ? 'Connected' : 'Not connected'}</strong></div></div>
+            <div className="balance-panel"><div className="panel-top"><span>YOUR BALANCE</span><span className="token-symbol">${tokenMeta.symbol}</span></div><div className="balance-value">{wallet ? '12,480.00' : '—'} <small>{tokenMeta.symbol}</small></div><div className="balance-usd">{wallet ? '≈ $124.80' : `${tokenMeta.name} on testnet`}</div><div className="balance-footer"><span>Token data</span><strong className={tokenMeta.status === 'live' ? 'connected' : ''}>{tokenMeta.status === 'live' ? 'Live' : 'Reading...'}</strong></div></div>
             <div className="stake-panel"><div className="panel-top"><span>STAKE TO UNLOCK</span><LockKeyhole size={16} /></div><p>Lock $VFUEL to turn on your private agent channel.</p><div className="stake-input"><input type="number" min="0" placeholder="0.00" value={stakeAmount} onChange={(event) => setStakeAmount(event.target.value)} /><span>VFUEL</span><button onClick={() => setStakeAmount('12480')}>MAX</button></div><button className="boost-button" disabled={!wallet || !stakeAmount || boosted} onClick={() => setBoosted(true)}>{boosted ? <><Check size={16} /> Agent Boost active</> : <><Zap size={16} /> Stake & activate</>}</button></div>
             <div className={boosted ? 'unlock-panel active' : 'unlock-panel'}><div className="unlock-icon"><Zap size={20} fill="currentColor" /></div><div><span>AGENT BOOST</span><h3>{boosted ? 'Online & listening' : 'Locked signal'}</h3><p>{boosted ? 'Your agent is tuned to the launchpad.' : 'Stake VFUEL to begin your session.'}</p></div><span className="lock-state">{boosted ? 'LIVE' : <LockKeyhole size={15} />}</span></div>
           </div>
         </section>
 
-        <section className="agent-console" id="launchpad"><div className="console-head"><div className="agent-title"><div className="live-avatar"><Bot size={20} /></div><div><h2>VibeFuel Agent <span>● LIVE</span></h2><p>Launchpad intelligence, with a little extra sauce.</p></div></div><div className="ca-display"><span>TARGET CA</span><strong>{CONTRACT}</strong><button onClick={copyCa} aria-label="Copy token contract address">{copied ? <Check size={14} /> : <Copy size={14} />}</button></div></div><div className="chat-window"><AgentMessage>{boosted ? <>Boost confirmed. I’m locked in and watching the launchpad. <strong>Drop a contract address or ask me anything.</strong></> : <>Your agent channel is waiting. Stake $VFUEL above to start decoding the launchpad.</>}</AgentMessage>{messages.map((message, index) => <div key={index}><div className="message-row user-row"><div className="message user-message">{message.prompt}</div></div><AgentMessage>{message.reply}</AgentMessage></div>)}{messages.length === 0 && <div className="suggestions">{suggestions.map(({ label, icon: Icon }) => <button key={label} disabled={!boosted} onClick={() => sendQuestion(label)}><Icon size={15} /> {label}</button>)}</div>}</div><form className="chat-input" onSubmit={(event) => { event.preventDefault(); sendQuestion(); }}><input value={question} disabled={!boosted} onChange={(event) => setQuestion(event.target.value)} placeholder={boosted ? 'Ask your agent about a token...' : 'Stake VFUEL to activate chat'} /><button disabled={!boosted || !question.trim()} aria-label="Send question"><Send size={17} /></button></form></section>
+        <section className="agent-console" id="launchpad"><div className="console-head"><div className="agent-title"><div className="live-avatar"><Bot size={20} /></div><div><h2>VibeFuel Agent <span>● LIVE</span></h2><p>Launchpad intelligence, with a little extra sauce.</p></div></div><div className="ca-display"><span>TARGET CA</span><strong>{`${CONTRACT_ADDRESS.slice(0, 6)}...${CONTRACT_ADDRESS.slice(-4)}`}</strong><button onClick={copyCa} aria-label="Copy token contract address">{copied ? <Check size={14} /> : <Copy size={14} />}</button></div></div><div className="chat-window"><AgentMessage>{boosted ? <>Boost confirmed. I’m locked in and watching the launchpad. <strong>Drop a contract address or ask me anything.</strong></> : <>Your agent channel is waiting. Stake $VFUEL above to start decoding the launchpad.</>}</AgentMessage>{messages.map((message, index) => <div key={index}><div className="message-row user-row"><div className="message user-message">{message.prompt}</div></div><AgentMessage>{message.reply}</AgentMessage></div>)}{messages.length === 0 && <div className="suggestions">{suggestions.map(({ label, icon: Icon }) => <button key={label} disabled={!boosted} onClick={() => sendQuestion(label)}><Icon size={15} /> {label}</button>)}</div>}</div><form className="chat-input" onSubmit={(event) => { event.preventDefault(); sendQuestion(); }}><input value={question} disabled={!boosted} onChange={(event) => setQuestion(event.target.value)} placeholder={boosted ? 'Ask your agent about a token...' : 'Stake VFUEL to activate chat'} /><button disabled={!boosted || !question.trim()} aria-label="Send question"><Send size={17} /></button></form></section>
 
         <section className="ticker" id="about"><div><span className="ticker-dot" /> VIBE VIBE / SIGNAL FEED</div><div className="ticker-items"><span>$MOONCAT <b>+24.8%</b></span><span>$BASED <b>+18.2%</b></span><span>$VIBES <b>+11.7%</b></span></div><a href="#launchpad">View launchpad <ArrowUpRight size={15} /></a></section>
       </main>
