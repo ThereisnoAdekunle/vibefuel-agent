@@ -66,6 +66,21 @@ async function readTokenBalance(address, decimals) {
   return `${whole.toLocaleString()}.${fraction}`;
 }
 
+async function readLaunchData() {
+  const response = await fetch(`/api/launch?address=${encodeURIComponent(CONTRACT_ADDRESS)}`);
+  const payload = await response.json();
+  if (!response.ok || payload.error || !payload.data) throw new Error('Unable to read launch data');
+  return payload.data;
+}
+
+function formatEth(wei) {
+  if (!wei) return '0';
+  const value = BigInt(wei);
+  const whole = value / 1000000000000000000n;
+  const fraction = (value % 1000000000000000000n).toString().padStart(18, '0').slice(0, 4).replace(/0+$/, '');
+  return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+
 function shortenAddress(address) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
@@ -89,6 +104,7 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [tokenMeta, setTokenMeta] = useState({ name: 'VIBE FUEL', symbol: 'VFUEL', status: 'loading' });
   const [tokenBalance, setTokenBalance] = useState(null);
+  const [launchData, setLaunchData] = useState(null);
 
   useEffect(() => {
     readTokenMetadata().then((metadata) => setTokenMeta({ ...metadata, status: 'live' })).catch(() => setTokenMeta((current) => ({ ...current, status: 'offline' })));
@@ -98,6 +114,14 @@ function App() {
     if (!wallet || wallet === 'demo' || !tokenMeta.decimals) return;
     readTokenBalance(wallet, tokenMeta.decimals).then(setTokenBalance).catch(() => setTokenBalance(null));
   }, [wallet, tokenMeta.decimals]);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = () => readLaunchData().then((data) => { if (active) setLaunchData(data); }).catch(() => {});
+    refresh();
+    const interval = setInterval(refresh, 30000);
+    return () => { active = false; clearInterval(interval); };
+  }, []);
 
   const connectWallet = async () => {
     if (!window.ethereum) {
@@ -165,7 +189,7 @@ function App() {
           <div className="access-grid">
             <div className="balance-panel"><div className="panel-top"><span>YOUR BALANCE</span><span className="token-symbol">${tokenMeta.symbol}</span></div><div className="balance-value">{wallet ? wallet === 'demo' ? '12,480.00' : tokenBalance ?? 'Reading...' : '—'} <small>{tokenMeta.symbol}</small></div><div className="balance-usd">{wallet ? wallet === 'demo' ? 'Demo wallet balance' : 'Live contract balance' : `${tokenMeta.name} on testnet`}</div><div className="balance-footer"><span>Token data</span><strong className={tokenMeta.status === 'live' ? 'connected' : ''}>{tokenMeta.status === 'live' ? 'Live' : 'Reading...'}</strong></div></div>
             <div className="stake-panel"><div className="panel-top"><span>STAKE TO UNLOCK</span><LockKeyhole size={16} /></div><p>Lock $VFUEL to turn on your private agent channel.</p><div className="stake-input"><input type="number" min="0" placeholder="0.00" value={stakeAmount} onChange={(event) => setStakeAmount(event.target.value)} /><span>VFUEL</span><button onClick={() => setStakeAmount('12480')}>MAX</button></div><button className="boost-button" disabled={!wallet || !stakeAmount || boosted} onClick={() => setBoosted(true)}>{boosted ? <><Check size={16} /> Agent Boost active</> : <><Zap size={16} /> Stake & activate</>}</button></div>
-            <div className={boosted ? 'unlock-panel active' : 'unlock-panel'}><div className="unlock-icon"><Zap size={20} fill="currentColor" /></div><div><span>AGENT BOOST</span><h3>{boosted ? 'Online & listening' : 'Locked signal'}</h3><p>{boosted ? 'Your agent is tuned to the launchpad.' : 'Stake VFUEL to begin your session.'}</p></div><span className="lock-state">{boosted ? 'LIVE' : <LockKeyhole size={15} />}</span></div>
+            <div className={boosted ? 'unlock-panel active' : 'unlock-panel'}><div className="unlock-icon"><Zap size={20} fill="currentColor" /></div><div><span>AGENT BOOST</span><h3>{boosted ? 'Online & listening' : 'Locked signal'}</h3><p>{boosted ? 'Your agent is tuned to the launchpad.' : 'Stake VFUEL to begin your session.'}</p><small className="launch-snapshot">{launchData ? `${launchData.curve.lifecycle} · ${launchData.holderCount} holders · ${formatEth(launchData.analytics?.volume24hWei)} test ETH / 24h` : 'Loading launch snapshot...'}</small></div><span className="lock-state">{boosted ? 'LIVE' : <LockKeyhole size={15} />}</span></div>
           </div>
         </section>
 
