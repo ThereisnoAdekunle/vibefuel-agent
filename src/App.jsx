@@ -55,6 +55,17 @@ async function readTokenMetadata() {
   return { name: decodeString(raw.name), symbol: decodeString(raw.symbol), decimals: Number.parseInt(raw.decimals, 16), totalSupply: BigInt(raw.totalSupply) };
 }
 
+async function readTokenBalance(address, decimals) {
+  const data = `0x70a08231${address.slice(2).padStart(64, '0')}`;
+  const response = await fetch(RPC_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: CONTRACT_ADDRESS, data }, 'latest'] }) });
+  const payload = await response.json();
+  if (payload.error || !payload.result) throw new Error('Unable to read wallet balance');
+  const value = BigInt(payload.result);
+  const whole = value / (10n ** BigInt(decimals));
+  const fraction = (value % (10n ** BigInt(decimals))).toString().padStart(decimals, '0').slice(0, 2);
+  return `${whole.toLocaleString()}.${fraction}`;
+}
+
 function shortenAddress(address) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
@@ -77,10 +88,16 @@ function App() {
   const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState([]);
   const [tokenMeta, setTokenMeta] = useState({ name: 'VIBE FUEL', symbol: 'VFUEL', status: 'loading' });
+  const [tokenBalance, setTokenBalance] = useState(null);
 
   useEffect(() => {
     readTokenMetadata().then((metadata) => setTokenMeta({ ...metadata, status: 'live' })).catch(() => setTokenMeta((current) => ({ ...current, status: 'offline' })));
   }, []);
+
+  useEffect(() => {
+    if (!wallet || wallet === 'demo' || !tokenMeta.decimals) return;
+    readTokenBalance(wallet, tokenMeta.decimals).then(setTokenBalance).catch(() => setTokenBalance(null));
+  }, [wallet, tokenMeta.decimals]);
 
   const connectWallet = async () => {
     if (!window.ethereum) {
@@ -146,7 +163,7 @@ function App() {
         <section className="dashboard" id="agent">
           <div className="dashboard-head"><div><p className="section-kicker">01 / ACCESS PROTOCOL</p><h2>Fuel the signal.</h2></div><div className="chain-label"><span className="status-dot" /> Robinhood Chain <b>TESTNET</b></div></div>
           <div className="access-grid">
-            <div className="balance-panel"><div className="panel-top"><span>YOUR BALANCE</span><span className="token-symbol">${tokenMeta.symbol}</span></div><div className="balance-value">{wallet ? '12,480.00' : '—'} <small>{tokenMeta.symbol}</small></div><div className="balance-usd">{wallet ? '≈ $124.80' : `${tokenMeta.name} on testnet`}</div><div className="balance-footer"><span>Token data</span><strong className={tokenMeta.status === 'live' ? 'connected' : ''}>{tokenMeta.status === 'live' ? 'Live' : 'Reading...'}</strong></div></div>
+            <div className="balance-panel"><div className="panel-top"><span>YOUR BALANCE</span><span className="token-symbol">${tokenMeta.symbol}</span></div><div className="balance-value">{wallet ? wallet === 'demo' ? '12,480.00' : tokenBalance ?? 'Reading...' : '—'} <small>{tokenMeta.symbol}</small></div><div className="balance-usd">{wallet ? wallet === 'demo' ? 'Demo wallet balance' : 'Live contract balance' : `${tokenMeta.name} on testnet`}</div><div className="balance-footer"><span>Token data</span><strong className={tokenMeta.status === 'live' ? 'connected' : ''}>{tokenMeta.status === 'live' ? 'Live' : 'Reading...'}</strong></div></div>
             <div className="stake-panel"><div className="panel-top"><span>STAKE TO UNLOCK</span><LockKeyhole size={16} /></div><p>Lock $VFUEL to turn on your private agent channel.</p><div className="stake-input"><input type="number" min="0" placeholder="0.00" value={stakeAmount} onChange={(event) => setStakeAmount(event.target.value)} /><span>VFUEL</span><button onClick={() => setStakeAmount('12480')}>MAX</button></div><button className="boost-button" disabled={!wallet || !stakeAmount || boosted} onClick={() => setBoosted(true)}>{boosted ? <><Check size={16} /> Agent Boost active</> : <><Zap size={16} /> Stake & activate</>}</button></div>
             <div className={boosted ? 'unlock-panel active' : 'unlock-panel'}><div className="unlock-icon"><Zap size={20} fill="currentColor" /></div><div><span>AGENT BOOST</span><h3>{boosted ? 'Online & listening' : 'Locked signal'}</h3><p>{boosted ? 'Your agent is tuned to the launchpad.' : 'Stake VFUEL to begin your session.'}</p></div><span className="lock-state">{boosted ? 'LIVE' : <LockKeyhole size={15} />}</span></div>
           </div>
